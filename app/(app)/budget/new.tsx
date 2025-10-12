@@ -9,6 +9,8 @@ import {
   Button,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Stack, router } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -17,12 +19,11 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 // 1. GEMINI & SUPABASE/AUTH IMPORTS
 // ---------------------------------------------------------------
 import { GoogleGenAI } from '@google/genai'; // <-- New Import
-import { supabase } from '@/lib/supabaseClient'; 
-import { useAuth } from '@/lib/AuthContext'; 
+import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/lib/AuthContext';
 
 // ⚠️ WARNING: DO NOT USE THIS API KEY IN PRODUCTION ⚠️
-// Replace 'YOUR_GEMINI_API_KEY_HERE' with your actual key
-const GEMINI_API_KEY = 'AIzaSyAwzZjKIn_4XRBmYLcFGHidupEdnCyDRd4'; 
+const GEMINI_API_KEY = 'AIzaSyAwzZjKIn_4XRBmYLcFGHidupEdnCyDRd4';
 // ---------------------------------------------------------------
 
 // Mock list of categories
@@ -30,11 +31,9 @@ const CATEGORIES = ['Groceries', 'Dining Out', 'Shopping', 'Travel', 'Bills', 'M
 type Verdict = 'positive' | 'neutral' | 'negative' | null;
 
 // --- Initialize Gemini Client ---
-// We use useMemo to ensure the client is only created once.
 const useGemini = () => {
   return useMemo(() => new GoogleGenAI({ apiKey: GEMINI_API_KEY }), []);
 };
-
 
 export default function NewPurchaseModal() {
   const ai = useGemini(); // Initialize Gemini Client
@@ -46,14 +45,14 @@ export default function NewPurchaseModal() {
   const [category, setCategory] = useState('');
   const [finalName, setFinalName] = useState('');
   const [finalAmount, setFinalAmount] = useState('');
-  
+
   // 2. Flow/Analysis State
   const [currentStep, setCurrentStep] = useState(1);
   const [questions, setQuestions] = useState<string[]>([]);
   const [answers, setAnswers] = useState<string[]>(['', '', '']);
   const [verdict, setVerdict] = useState<Verdict>(null);
   const [suggestion, setSuggestion] = useState<string | null>(null);
-  
+
   // 3. UI State
   const [loading, setLoading] = useState(false);
 
@@ -65,11 +64,10 @@ export default function NewPurchaseModal() {
     try {
       return JSON.parse(jsonText);
     } catch (e) {
-      console.error("Failed to parse JSON:", jsonText, e);
+      console.error('Failed to parse JSON:', jsonText, e);
       return null;
     }
   };
-
 
   // --- Step 1 Handlers: Collect Input and GENERATE QUESTIONS ---
   const handleProceedToQuestions = async () => {
@@ -77,55 +75,49 @@ export default function NewPurchaseModal() {
       Alert.alert('Missing Info', 'Please enter item, amount, and category.');
       return;
     }
-    
+
     setLoading(true);
-    
+
     const prompt = `You are a financial coach. The user is considering buying "${item!}" for $${amount!} in the "${category!}" category.
     Generate exactly 3 specific, open-ended questions that challenge the user's need for this purchase and its financial impact.
     Format your response as a simple JSON array of strings. Do NOT include any text or markdown outside the JSON block.`;
 
-try {
+    try {
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: 'gemini-2.5-flash',
         contents: prompt,
       });
 
       const rawParsed = safeParseJson(response.text!, 'array');
 
-      // 1. Check if it's null (parsing failed)
       if (!rawParsed) {
-          throw new Error("Failed to parse AI response into JSON.");
+        throw new Error('Failed to parse AI response into JSON.');
       }
 
-      // 2. Check if it's actually an array
       if (!Array.isArray(rawParsed)) {
-          throw new Error("AI response was not an array.");
+        throw new Error('AI response was not an array.');
       }
-      
-      // 3. Optional: Check if all items are strings and the length is 3
-      if (rawParsed.length !== 3 || rawParsed.some(item => typeof item !== 'string')) {
-          throw new Error("Invalid response format from AI. Expected array of 3 strings.");
+
+      if (rawParsed.length !== 3 || rawParsed.some((item) => typeof item !== 'string')) {
+        throw new Error('Invalid response format from AI. Expected array of 3 strings.');
       }
-      
-      // 4. FIX: Cast the checked, valid array to string[]
+
       const parsedQuestions: string[] = rawParsed;
-      
+
       setQuestions(parsedQuestions);
       setLoading(false);
       setCurrentStep(2);
-
     } catch (error) {
       setLoading(false);
-      console.error("Gemini Question Generation Error:", error);
-      // Ensure the error message is extracted if it's an Error object
-      const errorMessage = error instanceof Error ? error.message : "An unknown AI error occurred.";
+      console.error('Gemini Question Generation Error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'An unknown AI error occurred.';
       Alert.alert('AI Error', `Failed to generate questions: ${errorMessage}`);
     }
   };
 
   // --- Step 2 Handlers: Answer Questions and GENERATE VERDICT ---
   const handleGenerateVerdict = async () => {
-    if (answers.some(a => !a.trim())) {
+    if (answers.some((a) => !a.trim())) {
       Alert.alert('Incomplete', 'Please provide an answer for all three questions.');
       return;
     }
@@ -152,34 +144,32 @@ try {
 
     try {
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: 'gemini-2.5-flash',
         contents: prompt,
       });
-      
-      const result = safeParseJson(response.text!, 'object') as { verdict: Verdict, suggestion: string };
+
+      const result = safeParseJson(response.text!, 'object') as { verdict: Verdict; suggestion: string };
 
       if (!result || !['positive', 'neutral', 'negative'].includes(result.verdict as string)) {
-        throw new Error("Invalid verdict format from AI.");
+        throw new Error('Invalid verdict format from AI.');
       }
 
       setVerdict(result.verdict);
       setSuggestion(result.suggestion);
       setLoading(false);
       setCurrentStep(3);
-
     } catch (error) {
       setLoading(false);
-      console.error("Gemini Verdict Generation Error:", error);
+      console.error('Gemini Verdict Generation Error:', error);
       Alert.alert('AI Error', 'Failed to generate a verdict. Check your prompt and API key.');
     }
   };
 
-    const handleQuestionChange = (index: number, value: string) => {
+  const handleQuestionChange = (index: number, value: string) => {
     const updated = [...answers];
     updated[index] = value;
     setAnswers(updated);
   };
-
 
   // --- Step 3 Handler: Final Save to Supabase ---
   const handleFinalSave = async () => {
@@ -187,23 +177,20 @@ try {
       Alert.alert('Missing Data', 'Please enter your final outcome and amount, and ensure you are logged in.');
       return;
     }
-    
+
     setLoading(true);
 
-    // Prepare data for Supabase
     const purchaseData = {
       name: item,
       amount: parseFloat(amount),
       category: category,
-      emotion: verdict, // Maps directly to your 'emotion' column
+      emotion: verdict,
       final_name: finalName,
       final_amount: parseFloat(finalAmount),
       userId: session.user.id,
     };
-    
-    const { error } = await supabase
-      .from('Purchases')
-      .insert([purchaseData]);
+
+    const { error } = await supabase.from('Purchases').insert([purchaseData]);
 
     setLoading(false);
 
@@ -212,8 +199,6 @@ try {
       Alert.alert('Save Failed', `Could not record purchase: ${error.message}`);
     } else {
       Alert.alert('Decision Saved!', 'Your purchase analysis has been recorded.');
-      
-      // RESET ALL STATE FOR NEXT PURCHASE
       setItem('');
       setAmount('');
       setCategory('');
@@ -224,12 +209,10 @@ try {
       setVerdict(null);
       setSuggestion(null);
       setCurrentStep(1);
-
-      router.back(); 
+      router.back();
     }
   };
-  
-  // ... (All existing render functions and styles below) ...
+
   // --- UI Rendering Helpers ---
   const getVerdictStyle = (v: Verdict) => {
     if (v === 'positive') return { backgroundColor: '#E0FFEB', borderColor: '#00A86B', color: '#00A86B' };
@@ -237,7 +220,6 @@ try {
     return { backgroundColor: '#F0F0F0', borderColor: '#AAAAAA', color: '#333' };
   };
 
-  // --- Render Functions for Each Step ---
   const renderStep1Input = () => (
     <>
       <Text style={styles.label}>Item Name</Text>
@@ -248,7 +230,7 @@ try {
         style={styles.input}
         placeholder="0.00"
         value={amount}
-        onChangeText={text => setAmount(text.replace(/[^0-9.]/g, ''))}
+        onChangeText={(text) => setAmount(text.replace(/[^0-9.]/g, ''))}
         keyboardType="numeric"
       />
 
@@ -264,9 +246,14 @@ try {
           </TouchableOpacity>
         ))}
       </View>
-      
+
       <View style={styles.buttonSpacer}>
-        <Button title="Analyze Purchase" onPress={handleProceedToQuestions} color="#007AFF" disabled={loading || !category || !item || !amount} />
+        <Button
+          title="Analyze Purchase"
+          onPress={handleProceedToQuestions}
+          color="#007AFF"
+          disabled={loading || !category || !item || !amount}
+        />
       </View>
     </>
   );
@@ -288,26 +275,32 @@ try {
         </View>
       ))}
       <View style={styles.buttonSpacer}>
-        <Button title="Get Decision" onPress={handleGenerateVerdict} color="#007AFF" disabled={loading || answers.some(a => !a.trim())} />
+        <Button
+          title="Get Decision"
+          onPress={handleGenerateVerdict}
+          color="#007AFF"
+          disabled={loading || answers.some((a) => !a.trim())}
+        />
       </View>
     </>
   );
-  
+
   const renderStep3Verdict = () => {
     const verdictStyle = getVerdictStyle(verdict);
-    
+
     return (
       <>
         <Text style={styles.subtitle}>Gemini Verdict for {item}</Text>
-        
-        {/* Verdict Badge */}
-        <View style={[styles.verdictBox, { borderColor: verdictStyle.borderColor, backgroundColor: verdictStyle.backgroundColor }]}>
-          <Text style={[styles.verdictText, { color: verdictStyle.color }]}>
-            {verdict?.toUpperCase()}
-          </Text>
+
+        <View
+          style={[
+            styles.verdictBox,
+            { borderColor: verdictStyle.borderColor, backgroundColor: verdictStyle.backgroundColor },
+          ]}
+        >
+          <Text style={[styles.verdictText, { color: verdictStyle.color }]}>{verdict?.toUpperCase()}</Text>
         </View>
-        
-        {/* Suggestion Text */}
+
         <Text style={styles.suggestionText}>{suggestion}</Text>
 
         <Text style={styles.finalQuestion}>What was your *final* purchase/decision?</Text>
@@ -317,13 +310,13 @@ try {
           value={finalName}
           onChangeText={setFinalName}
         />
-        
+
         <Text style={styles.label}>Final Amount Spent ($)</Text>
         <TextInput
           style={styles.input}
           placeholder={`0.00`}
           value={finalAmount}
-          onChangeText={text => setFinalAmount(text.replace(/[^0-9.]/g, ''))}
+          onChangeText={(text) => setFinalAmount(text.replace(/[^0-9.]/g, ''))}
           keyboardType="numeric"
         />
 
@@ -333,33 +326,41 @@ try {
       </>
     );
   };
-  
+
   // --- Main Component Render ---
   return (
-    <View style={styles.outerContainer}>
-      <Stack.Screen 
+    <KeyboardAvoidingView
+      style={styles.outerContainer}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
+      <Stack.Screen
         options={{
-          presentation: 'modal', 
+          presentation: 'modal',
           title: `Step ${currentStep} of 3`,
           headerLeft: () => (
             <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 10 }}>
-              <Ionicons name="close" size={24} color="#333" /> 
+              <Ionicons name="close" size={24} color="#333" />
             </TouchableOpacity>
           ),
           headerShown: true,
-        }} 
+        }}
       />
-      
-      <ScrollView contentContainerStyle={styles.container}>
+
+      <ScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.inputPanel}>
           {loading && <ActivityIndicator size="large" color="#007AFF" style={{ padding: 20 }} />}
-          
+
           {!loading && currentStep === 1 && renderStep1Input()}
           {!loading && currentStep === 2 && renderStep2Questions()}
           {!loading && currentStep === 3 && renderStep3Verdict()}
         </View>
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -403,11 +404,8 @@ const styles = StyleSheet.create({
   tagText: { fontSize: 13, color: '#555' },
   tagTextSelected: { color: '#007AFF', fontWeight: '600' },
   buttonSpacer: { marginTop: 20 },
-  
-  // --- Step 2 & 3 Styles ---
   subtitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, color: '#1A1A1A' },
   questionText: { fontSize: 15, fontWeight: '500', marginBottom: 5, color: '#333' },
-  
   verdictBox: {
     alignSelf: 'flex-start',
     paddingHorizontal: 15,
@@ -433,9 +431,9 @@ const styles = StyleSheet.create({
     borderLeftColor: '#007AFF',
   },
   finalQuestion: {
-    fontSize: 18, 
-    fontWeight: 'bold', 
-    color: '#1A1A1A', 
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1A1A1A',
     marginBottom: 10,
-  }
+  },
 });
