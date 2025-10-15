@@ -143,6 +143,9 @@ export default function InvestScreen() {
         <Text style={styles.savedAmount}>
           ${totalSaved.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </Text>
+        
+                <Text style={styles.summaryLabel}>You should invest this. You were going to spend it anyway!</Text>
+
       </View>
 
 
